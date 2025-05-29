@@ -48,6 +48,54 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
     setDebugInfo(null);
   }, [isLogin]);
 
+  // Add comprehensive cleanup function
+  const clearAllAuthData = () => {
+    try {
+      // Clear all authentication-related localStorage items
+      const keysToRemove = [
+        'aditi_user_cache',
+        'aditi_supabase_auth',
+        'aditi_tab_state',
+        'bypass_team_check',
+        'sb-' // Supabase keys typically start with 'sb-'
+      ];
+      
+      // Remove specific keys
+      keysToRemove.forEach(key => {
+        if (key === 'sb-') {
+          // Remove all supabase keys
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const storageKey = localStorage.key(i);
+            if (storageKey && storageKey.startsWith('sb-')) {
+              localStorage.removeItem(storageKey);
+            }
+          }
+        } else {
+          localStorage.removeItem(key);
+        }
+      });
+
+      // Clear session storage as well
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('aditi_tab_id');
+        sessionStorage.removeItem('returning_from_tab_switch');
+        sessionStorage.removeItem('prevent_auto_refresh');
+        
+        // Remove any session storage keys that start with 'sb-'
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const storageKey = sessionStorage.key(i);
+          if (storageKey && storageKey.startsWith('sb-')) {
+            sessionStorage.removeItem(storageKey);
+          }
+        }
+      }
+      
+      console.log('✅ Cleared all authentication data');
+    } catch (error) {
+      console.error('Error clearing auth data:', error);
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
@@ -68,6 +116,9 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
     try {
       setDebugInfo({ checking: true });
       
+      // Check current session state
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
       // Check if user exists in auth.users
       const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
       
@@ -82,6 +133,9 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
       
       const debugData = {
         email,
+        currentSession: !!session,
+        sessionUser: session?.user?.email || null,
+        sessionExpiry: session?.expires_at || null,
         userExistsInAuth: !!userInAuth,
         userConfirmed: userInAuth?.email_confirmed_at ? true : false,
         lastSignIn: userInAuth?.last_sign_in_at,
@@ -89,6 +143,12 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
         isManager: !managerCheck.error && !!managerCheck.data,
         isTeamMember: !teamCheck.error && !!teamCheck.data,
         authError: authError?.message,
+        sessionError: sessionError?.message,
+        localStorage: {
+          userCache: !!localStorage.getItem('aditi_user_cache'),
+          supabaseAuth: !!localStorage.getItem('aditi_supabase_auth'),
+          tabState: !!localStorage.getItem('aditi_tab_state')
+        },
         tables: {
           admin: adminCheck.error ? adminCheck.error.message : 'exists',
           teams: managerCheck.error ? managerCheck.error.message : 'exists',
@@ -160,11 +220,30 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
       }
 
       if (isLogin) {
+        // COMPREHENSIVE CLEANUP BEFORE LOGIN ATTEMPT
+        console.log('🔄 Starting fresh login attempt...');
+        
+        // First, ensure we have a clean session
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+          console.log('✅ Cleared any existing local session');
+        } catch (cleanupError) {
+          console.log('ℹ️ No existing session to clear');
+        }
+        
+        // Clear all cached authentication data
+        clearAllAuthData();
+        
+        // Small delay to ensure cleanup is complete
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         // Check user status in debug mode
         if (debugMode) {
           await checkUserStatus(formData.email);
         }
 
+        console.log('🔐 Attempting fresh login...');
+        
         // Login with enhanced error handling
         const { data, error } = await supabase.auth.signInWithPassword({
           email: formData.email,
@@ -197,6 +276,8 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
           }
           throw error;
         }
+        
+        console.log('✅ Login successful, checking user permissions...');
         
         // Verify user has role access
         if (data.user) {
@@ -280,7 +361,13 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
           password: '',
           confirmPassword: ''
         });
+        
+        console.log('🎉 Login process completed successfully');
         toast.success('Logged in successfully!');
+        
+        // Small delay before allowing navigation to ensure everything is set up
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
       } else {
         // Enhanced Sign up with automatic role assignment for admins
         const { data, error } = await supabase.auth.signUp({
@@ -511,7 +598,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
           </div>
         )}
 
-        <div className="text-center mt-4">
+        <div className="text-center">
           <button
             onClick={() => setIsLogin(!isLogin)}
             className="text-purple-400 hover:text-purple-300 text-sm font-medium transition-colors duration-200"
@@ -602,6 +689,43 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
                 Toggle to bypass "not assigned to team" errors during testing
               </p>
             </div>
+            
+            {/* Clear Cache Button */}
+            <div className="mt-3 pt-3 border-t border-yellow-600">
+              <button
+                onClick={() => {
+                  clearAllAuthData();
+                  setFormData({ email: '', password: '', confirmPassword: '' });
+                  setDebugInfo(null);
+                  toast.success('All authentication cache cleared! Try logging in again.');
+                }}
+                className="w-full bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded transition-colors"
+              >
+                🧹 Clear All Cache & Reset Form
+              </button>
+              <p className="text-xs text-gray-400 mt-1">
+                Use this if you're experiencing login issues after logout
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Login Issue Helper */}
+        {isLogin && !debugMode && (
+          <div className="mt-4 text-center">
+            <p className="text-xs text-gray-500 mb-2">
+              Having trouble logging in after logout?
+            </p>
+            <button
+              onClick={() => {
+                clearAllAuthData();
+                setFormData({ email: '', password: '', confirmPassword: '' });
+                toast.success('Authentication cache cleared! Please try again.');
+              }}
+              className="text-xs text-blue-400 hover:text-blue-300 underline transition-colors"
+            >
+              Clear Cache & Try Again
+            </button>
           </div>
         )}
       </>
@@ -813,6 +937,100 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
                 Password reset email sent! Check your inbox and follow the instructions.
               </div>
             )}
+          </div>
+        )}
+
+        {/* Debug Mode Toggle */}
+        <div className="mt-4 text-center">
+          <button
+            onClick={() => setDebugMode(!debugMode)}
+            className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
+          >
+            {debugMode ? 'Hide Debug' : 'Show Debug Info'}
+          </button>
+        </div>
+
+        {/* Debug Information */}
+        {debugMode && debugInfo && (
+          <div className="mt-4 p-3 bg-gray-900/50 border border-gray-700 rounded-md">
+            <h4 className="text-xs font-medium text-gray-300 mb-2">Debug Information</h4>
+            <pre className="text-xs text-gray-400 overflow-auto">
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        {/* Quick Access for Testing */}
+        {debugMode && (
+          <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-md">
+            <h4 className="text-xs font-medium text-yellow-300 mb-2">Quick Test Accounts</h4>
+            <p className="text-xs text-gray-400 mb-2">For testing purposes, try these accounts:</p>
+            <div className="space-y-1 text-xs text-gray-300">
+              <p>Admin: anubhav.chaudhary@aditiconsulting.com</p>
+              <p>Admin: anubhavchaudhary459@gmail.com</p>
+              <p className="text-yellow-400">Note: You still need the correct password</p>
+            </div>
+            
+            {/* Team Assignment Bypass Toggle */}
+            <div className="mt-3 pt-3 border-t border-yellow-600">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-300">Team Assignment Check:</span>
+                <button
+                  onClick={() => {
+                    const current = localStorage.getItem('bypass_team_check') === 'true';
+                    localStorage.setItem('bypass_team_check', (!current).toString());
+                    toast.success(current ? 'Team checking enabled' : 'Team checking bypassed');
+                  }}
+                  className={`text-xs px-2 py-1 rounded transition-colors ${
+                    localStorage.getItem('bypass_team_check') === 'true'
+                      ? 'bg-red-600 text-white'
+                      : 'bg-green-600 text-white'
+                  }`}
+                >
+                  {localStorage.getItem('bypass_team_check') === 'true' ? 'Bypassed' : 'Enabled'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                Toggle to bypass "not assigned to team" errors during testing
+              </p>
+            </div>
+            
+            {/* Clear Cache Button */}
+            <div className="mt-3 pt-3 border-t border-yellow-600">
+              <button
+                onClick={() => {
+                  clearAllAuthData();
+                  setFormData({ email: '', password: '', confirmPassword: '' });
+                  setDebugInfo(null);
+                  toast.success('All authentication cache cleared! Try logging in again.');
+                }}
+                className="w-full bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded transition-colors"
+              >
+                🧹 Clear All Cache & Reset Form
+              </button>
+              <p className="text-xs text-gray-400 mt-1">
+                Use this if you're experiencing login issues after logout
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Login Issue Helper */}
+        {isLogin && !debugMode && (
+          <div className="mt-4 text-center">
+            <p className="text-xs text-gray-500 mb-2">
+              Having trouble logging in after logout?
+            </p>
+            <button
+              onClick={() => {
+                clearAllAuthData();
+                setFormData({ email: '', password: '', confirmPassword: '' });
+                toast.success('Authentication cache cleared! Please try again.');
+              }}
+              className="text-xs text-blue-400 hover:text-blue-300 underline transition-colors"
+            >
+              Clear Cache & Try Again
+            </button>
           </div>
         )}
 

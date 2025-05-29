@@ -293,51 +293,110 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       
+      console.log('🔄 Starting comprehensive sign out process...');
+      
+      // Clear user state immediately to prevent UI confusion
+      setUser(null);
+      
       // Clear ALL auth-related local storage data
-      localStorage.removeItem(USER_CACHE_KEY);
-      localStorage.removeItem('aditi_supabase_auth');
-      localStorage.removeItem('aditi_tab_state');
+      const keysToRemove = [
+        USER_CACHE_KEY,
+        'aditi_supabase_auth',
+        'aditi_tab_state',
+        'bypass_team_check'
+      ];
+      
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
+      // Clear all Supabase-related keys (they typically start with 'sb-')
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const storageKey = localStorage.key(i);
+        if (storageKey && storageKey.startsWith('sb-')) {
+          localStorage.removeItem(storageKey);
+        }
+      }
       
       // Clear any session storage
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('aditi_tab_id');
         sessionStorage.removeItem('returning_from_tab_switch');
         sessionStorage.removeItem('prevent_auto_refresh');
+        
+        // Remove any session storage keys that start with 'sb-'
+        for (let i = sessionStorage.length - 1; i >= 0; i--) {
+          const storageKey = sessionStorage.key(i);
+          if (storageKey && storageKey.startsWith('sb-')) {
+            sessionStorage.removeItem(storageKey);
+          }
+        }
       }
       
-      // Clear user state immediately
-      setUser(null);
+      console.log('✅ Cleared all local storage data');
       
-      // Then sign out from supabase
-      const { error } = await supabase.auth.signOut();
+      // Sign out from Supabase with all scopes
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
       
       if (error) {
         console.error('Supabase signOut error:', error);
-        toast.error('Failed to sign out completely. Please clear your browser data if issues persist.');
+        // Don't show error to user, just log it
+        console.log('⚠️ Supabase signout had issues, but local cleanup was successful');
       } else {
-        toast.success('Signed out successfully');
+        console.log('✅ Supabase signout successful');
       }
+      
+      // Additional cleanup: Clear any potential cached sessions
+      try {
+        // Force clear any remaining session data
+        await supabase.auth.signOut({ scope: 'local' });
+        console.log('✅ Additional local session cleanup completed');
+      } catch (additionalError) {
+        console.log('ℹ️ No additional session to clear');
+      }
+      
+      toast.success('Signed out successfully');
       
       // Force redirect to home page
       if (router.pathname !== '/') {
         await router.push('/');
       }
       
-      // Force page reload to ensure clean state
+      console.log('🎉 Sign out process completed');
+      
+      // Force page reload after a short delay to ensure completely clean state
       setTimeout(() => {
-        window.location.reload();
-      }, 100);
+        console.log('🔄 Forcing page reload for clean state');
+        window.location.href = '/';
+      }, 500);
       
     } catch (error) {
       console.error('Error signing out:', error);
-      toast.error('Failed to sign out');
       
-      // Even if there's an error, try to clear local data and redirect
+      // Even if there's an error, ensure we clear everything possible
       setUser(null);
-      localStorage.clear();
+      
+      // Clear localStorage completely as a last resort
+      try {
+        // Only clear our app's keys to be safe
+        const ourKeys = Object.keys(localStorage).filter(key => 
+          key.includes('aditi') || key.startsWith('sb-')
+        );
+        ourKeys.forEach(key => localStorage.removeItem(key));
+        console.log('✅ Emergency local storage cleanup completed');
+      } catch (clearError) {
+        console.error('Even emergency cleanup failed:', clearError);
+      }
+      
+      toast.success('Signed out (with cleanup)');
+      
       if (router.pathname !== '/') {
         router.push('/');
       }
+      
+      // Force reload even on error
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 1000);
+      
     } finally {
       setIsLoading(false);
     }
