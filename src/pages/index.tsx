@@ -8,18 +8,22 @@ export default function Home() {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const [showFallbackUI, setShowFallbackUI] = useState(false);
+  const [redirectAttempted, setRedirectAttempted] = useState(false);
 
   useEffect(() => {
-    // Force UI to show auth screen if loading takes too long (3 seconds)
+    // Reduce timeout to 2 seconds for better UX
     const loadingTimeout = setTimeout(() => {
       if (isLoading) {
-        console.log('Loading timeout reached, showing fallback UI');
+        console.log('⏰ Loading timeout reached, showing fallback UI');
         setShowFallbackUI(true);
       }
-    }, 3000);
+    }, 2000);
 
-    // If user is already authenticated, redirect based on role
-    if (user && !isLoading) {
+    // Enhanced user authentication and redirection logic
+    if (user && !isLoading && !redirectAttempted) {
+      console.log('🔄 Redirecting authenticated user:', user.email, 'Role:', user.role);
+      setRedirectAttempted(true);
+      
       switch (user.role) {
         case 'admin':
         case 'manager':
@@ -28,13 +32,24 @@ export default function Home() {
         case 'user':
           router.push('/user-dashboard');
           break;
+        default:
+          console.warn('⚠️ Unknown user role:', user.role);
+          router.push('/user-dashboard'); // Default fallback
+          break;
       }
     }
 
     return () => clearTimeout(loadingTimeout);
-  }, [user, isLoading, router]);
+  }, [user, isLoading, router, redirectAttempted]);
 
-  // Show a brief loading spinner, but only for a short time
+  // Reset redirect attempt when user changes (for re-login scenarios)
+  useEffect(() => {
+    if (!user) {
+      setRedirectAttempted(false);
+    }
+  }, [user]);
+
+  // Show loading spinner with reduced timeout
   if (isLoading && !showFallbackUI) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#1a1f2e]">
@@ -85,7 +100,8 @@ export default function Home() {
         <div className="min-h-screen flex items-center justify-center bg-[#1a1f2e] text-white">
           <div className="text-center p-8 bg-[#1e2538] rounded-lg shadow-lg">
             <h1 className="text-2xl font-bold mb-4">Redirecting...</h1>
-            <p>If you are not redirected automatically, please click one of the following links:</p>
+            <p className="mb-4">Welcome back, {user.name}!</p>
+            <p className="text-sm text-gray-300 mb-4">If you are not redirected automatically, please click one of the following links:</p>
             <div className="mt-4 space-y-2">
               <button 
                 onClick={() => router.push('/dashboard')}

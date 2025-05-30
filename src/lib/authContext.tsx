@@ -4,8 +4,10 @@ import { useRouter } from 'next/router';
 import { toast } from 'react-hot-toast';
 import { saveTabState } from './tabSwitchUtil';
 
-// User cache key for localStorage
+// User cache keys for localStorage
 export const USER_CACHE_KEY = 'aditi_user_cache';
+export const SESSION_BACKUP_KEY = 'aditi_session_backup';
+export const SESSION_LOCK_KEY = 'aditi_session_lock';
 
 export type UserRole = 'user' | 'manager' | 'admin';
 
@@ -39,91 +41,299 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionCheckInProgress, setSessionCheckInProgress] = useState(false);
+  const [lastSessionCheck, setLastSessionCheck] = useState<number>(0);
   const router = useRouter();
 
-  // Attempt to restore user from cache on initial load
-  useEffect(() => {
-    // Attempt to get cached user first for immediate UI display
-    const cachedUser = localStorage.getItem(USER_CACHE_KEY);
-    if (cachedUser) {
+  // Enhanced user state setter with comprehensive backup
+  const setUserWithBackup = (newUser: User | null) => {
+    console.log('🔄 Setting user with backup:', newUser?.email || 'null');
+    setUser(newUser);
+    
+    // Guard against SSR
+    if (typeof window === 'undefined') return;
+    
+    if (newUser) {
       try {
-        setUser(JSON.parse(cachedUser));
-      } catch (err) {
-        console.error('Error parsing cached user:', err);
+        // Store in multiple places for redundancy
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(newUser));
+        
+        // Create a session backup with timestamp and session ID
+        const sessionBackup = {
+          user: newUser,
+          timestamp: Date.now(),
+          sessionId: `session_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          tabId: sessionStorage.getItem('aditi_tab_id') || 'unknown',
+          url: window.location.href,
+          lastActivity: Date.now(), // Track last activity for refresh scenarios
+          refreshCount: parseInt(sessionStorage.getItem('aditi_refresh_count') || '0') + 1
+        };
+        localStorage.setItem(SESSION_BACKUP_KEY, JSON.stringify(sessionBackup));
+        
+        // Also store in sessionStorage for immediate tab recovery
+        sessionStorage.setItem('aditi_current_user', JSON.stringify(newUser));
+        
+        // Track refresh count for debugging
+        sessionStorage.setItem('aditi_refresh_count', sessionBackup.refreshCount.toString());
+        
+        // Store a "last known good state" marker
+        localStorage.setItem('aditi_last_good_state', JSON.stringify({
+          timestamp: Date.now(),
+          userEmail: newUser.email,
+          userRole: newUser.role
+        }));
+      } catch (error) {
+        console.error('❌ Error saving user backup (storage quota exceeded?):', error);
+        // Continue without backup if storage fails
       }
-    } 
+      
+    } else {
+      try {
+        localStorage.removeItem(USER_CACHE_KEY);
+        localStorage.removeItem(SESSION_BACKUP_KEY);
+        localStorage.removeItem('aditi_last_good_state');
+        sessionStorage.removeItem('aditi_current_user');
+        sessionStorage.removeItem('aditi_refresh_count');
+      } catch (error) {
+        console.error('❌ Error clearing user backup:', error);
+      }
+    }
+  };
+
+  // Enhanced user restoration with multiple fallback sources
+  const restoreUserFromBackup = (): User | null => {
+    // Guard against SSR
+    if (typeof window === 'undefined') return null;
     
-    // Check session in the background without showing loading state
-    checkSessionQuietly();
+    try {
+      // First try sessionStorage (most recent)
+      const sessionUser = sessionStorage.getItem('aditi_current_user');
+      if (sessionUser) {
+        const parsedUser = JSON.parse(sessionUser);
+        console.log('✅ Restored user from sessionStorage:', parsedUser.email);
+        setUser(parsedUser);
+        return parsedUser;
+      }
+
+      // Then try session backup (with timestamp validation)
+      const sessionBackup = localStorage.getItem(SESSION_BACKUP_KEY);
+      if (sessionBackup) {
+        const backup = JSON.parse(sessionBackup);
+        // Check if backup is recent (within 24 hours)
+        if (backup.timestamp && (Date.now() - backup.timestamp) < 24 * 60 * 60 * 1000) {
+          console.log('✅ Restored user from session backup:', backup.user.email);
+          setUser(backup.user);
+          // Also update sessionStorage
+          sessionStorage.setItem('aditi_current_user', JSON.stringify(backup.user));
+          return backup.user;
+        }
+      }
+      
+      // Finally try regular cache
+      const cachedUser = localStorage.getItem(USER_CACHE_KEY);
+      if (cachedUser) {
+        const parsedUser = JSON.parse(cachedUser);
+        console.log('✅ Restored user from cache:', parsedUser.email);
+        setUser(parsedUser);
+        // Update sessionStorage
+        sessionStorage.setItem('aditi_current_user', JSON.stringify(parsedUser));
+        return parsedUser;
+      }
+    } catch (err) {
+      console.error('❌ Error restoring user from backup:', err);
+    }
+    return null;
+  };
+
+  // Session lock mechanism to prevent race conditions
+  const acquireSessionLock = (): boolean => {
+    // Guard against SSR
+    if (typeof window === 'undefined') return false;
     
-    // Always force clear loading state after 3 seconds no matter what
+    const lockKey = SESSION_LOCK_KEY;
+    const currentTime = Date.now();
+    const existingLock = localStorage.getItem(lockKey);
+    
+    if (existingLock) {
+      const lockTime = parseInt(existingLock);
+      // If lock is older than 10 seconds, consider it stale
+      if (currentTime - lockTime < 10000) {
+        return false; // Lock is active
+      }
+    }
+    
+    // Acquire lock
+    localStorage.setItem(lockKey, currentTime.toString());
+    return true;
+  };
+
+  const releaseSessionLock = () => {
+    // Guard against SSR
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(SESSION_LOCK_KEY);
+  };
+
+  // Initial load effect with immediate restoration
+  useEffect(() => {
+    // Guard against SSR - only run in browser
+    if (typeof window === 'undefined') return;
+    
+    console.log('🚀 AuthProvider initializing...');
+    
+    // CRITICAL: Check if this is a page refresh scenario (browser-only)
+    let isPageRefresh = false;
+    try {
+      isPageRefresh = (typeof window !== 'undefined' && 
+                       window.performance?.getEntriesByType && 
+                       window.performance.getEntriesByType('navigation').length > 0 && 
+                       (window.performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming).type === 'reload') ||
+                      (typeof window !== 'undefined' && window.performance?.navigation?.type === 1);
+    } catch (error) {
+      console.log('⚠️ Performance API not available, assuming normal load');
+      isPageRefresh = false;
+    }
+    
+    if (isPageRefresh) {
+      console.log('🔄 Page refresh detected, prioritizing localStorage recovery...');
+    }
+    
+    // Immediately restore from backup to prevent UI flicker
+    const restoredUser = restoreUserFromBackup();
+    
+    // If we restored a user, we can clear loading immediately
+    if (restoredUser) {
+      console.log('✅ User restored immediately:', restoredUser.email);
+      setIsLoading(false);
+      
+      // For page refresh scenarios, also verify the session is still valid
+      if (isPageRefresh) {
+        console.log('🔍 Verifying session after page refresh...');
+        setTimeout(() => {
+          if (!sessionCheckInProgress) {
+            checkSessionQuietly();
+          }
+        }, 500); // Slightly longer delay for refresh scenarios
+      }
+    } else {
+      console.log('⚠️ No user found in backup, checking session...');
+    }
+    
+    // Check session in the background (with delay to avoid race conditions)
+    if (!restoredUser || !isPageRefresh) {
+      const sessionCheckDelay = setTimeout(() => {
+        if (!sessionCheckInProgress) {
+          checkSessionQuietly();
+        }
+      }, 100);
+      
+      return () => {
+        clearTimeout(sessionCheckDelay);
+      };
+    }
+    
+    // Safety timer to clear loading state
     const safetyTimer = setTimeout(() => {
       if (isLoading) {
-        console.log('SAFETY: Force clearing loading state');
+        console.log('⚠️ SAFETY: Force clearing loading state');
         setIsLoading(false);
       }
     }, 3000);
     
-    return () => clearTimeout(safetyTimer);
+    return () => {
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
-  // Handle tab visibility changes to prevent session loss
+  // Enhanced tab visibility handler with better session management
   useEffect(() => {
-    // Define handler to maintain session when tab becomes visible again
+    // Guard against SSR - only run in browser
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        // Save tab state with authentication info
+        console.log('👁️ Tab became visible, managing session...');
+        
+        // Save current state
         saveTabState({ 
           hasAuth: !!user,
           authTimestamp: Date.now(),
-          userEmail: user?.email
+          userEmail: user?.email,
+          tabBecameVisible: true,
+          currentUrl: window.location.href
         });
-        // Check if we have a cached user but not a current user state
-        const cachedUser = localStorage.getItem(USER_CACHE_KEY);
-        if (cachedUser && !user) {
-          try {
-            setUser(JSON.parse(cachedUser));
-          } catch (err) {
-            console.error('Error parsing cached user:', err);
+        
+        // If we don't have a user but have a backup, restore it immediately
+        if (!user) {
+          const restoredUser = restoreUserFromBackup();
+          if (restoredUser) {
+            console.log('✅ Restored user from backup on tab focus:', restoredUser.email);
           }
         }
-        // Always check session when tab becomes visible
-        const tabSwitchDelay = setTimeout(() => {
-          checkSessionQuietly();
+        
+        // Check session with delay to avoid race conditions
+        const checkDelay = setTimeout(() => {
+          // Only check if enough time has passed since last check
+          const timeSinceLastCheck = Date.now() - lastSessionCheck;
+          if (timeSinceLastCheck > 5000 && !sessionCheckInProgress) { // 5 second minimum
+            checkSessionQuietly();
+          }
         }, 500);
-        return () => clearTimeout(tabSwitchDelay);
+        
+        return () => clearTimeout(checkDelay);
+        
       } else if (document.visibilityState === 'hidden') {
+        // Save state when tab becomes hidden
         if (user) {
+          console.log('👁️ Tab became hidden, saving state for:', user.email);
           saveTabState({ 
             hasAuth: true,
             hiddenWithAuth: true,
-            userEmail: user.email
+            userEmail: user.email,
+            tabBecameHidden: true,
+            currentUrl: window.location.href
           });
+          
+          // Ensure user is backed up before tab becomes hidden
+          setUserWithBackup(user);
         }
       }
     };
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [user]);
+  }, [user, sessionCheckInProgress, lastSessionCheck]);
 
-  // Set up auth state listener
+  // Enhanced auth state listener with better error handling
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('🔐 Auth state change:', event, !!session);
+      
       if (event === 'SIGNED_IN' && session) {
         try {
           await updateUserData(session.user);
         } catch (error) {
-          console.error('Error updating user data on sign in:', error);
+          console.error('❌ Error updating user data on sign in:', error);
+          // Don't clear user on error, try to restore from backup
+          if (!user) {
+            restoreUserFromBackup();
+          }
           setIsLoading(false);
         }
       } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        localStorage.removeItem(USER_CACHE_KEY);
-        
+        console.log('🚪 User signed out');
+        setUserWithBackup(null);
         if (router.pathname !== '/') {
           router.push('/');
+        }
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        console.log('🔄 Token refreshed, updating user data');
+        try {
+          await updateUserData(session.user, false);
+        } catch (error) {
+          console.error('❌ Error updating user data on token refresh:', error);
+          // Don't clear user on token refresh error
         }
       }
     });
@@ -133,33 +343,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [router.pathname]);
   
-  // Quiet session check without loading spinner
+  // Enhanced quiet session check with lock mechanism
   const checkSessionQuietly = async () => {
+    if (sessionCheckInProgress) {
+      console.log('⏳ Session check already in progress, skipping...');
+      return;
+    }
+
+    // Try to acquire lock
+    if (!acquireSessionLock()) {
+      console.log('🔒 Session check locked by another process, skipping...');
+      return;
+    }
+
+    setSessionCheckInProgress(true);
+    setLastSessionCheck(Date.now());
+    
     try {
+      console.log('🔍 Checking session quietly...');
       const { data: { session }, error } = await supabase.auth.getSession();
+      
       if (error) {
-        console.error('Session check error:', error);
-        setUser(null);
-        localStorage.removeItem(USER_CACHE_KEY);
+        console.error('❌ Session check error:', error);
+        // Don't immediately clear user on error, try to restore from backup
+        if (!user) {
+          restoreUserFromBackup();
+        }
         return;
       }
+      
       if (session && session.user) {
-        updateUserData(session.user, false);
-      } else if (!session && user) {
-        const cachedUser = localStorage.getItem(USER_CACHE_KEY);
-        if (!cachedUser) {
-          setUser(null);
-          localStorage.removeItem(USER_CACHE_KEY);
-        } else if (document.visibilityState !== 'visible') {
-          console.log('Preserving user during tab switch');
+        console.log('✅ Valid session found, updating user data');
+        await updateUserData(session.user, false);
+      } else if (!session) {
+        console.log('❌ No session found');
+        
+        // Check if we have a very recent backup before clearing user
+        const sessionBackup = localStorage.getItem(SESSION_BACKUP_KEY);
+        if (sessionBackup) {
+          try {
+            const backup = JSON.parse(sessionBackup);
+            // If backup is very recent (within 2 minutes), keep the user
+            if (backup.timestamp && (Date.now() - backup.timestamp) < 2 * 60 * 1000) {
+              console.log('⏰ Keeping user from recent backup despite no session');
+              if (!user && backup.user) {
+                setUser(backup.user);
+              }
+              return;
+            }
+          } catch (err) {
+            console.error('❌ Error parsing session backup:', err);
+          }
+        }
+        
+        // Only clear user if no recent backup and we're not on a protected route
+        if (user && !sessionBackup && router.pathname !== '/') {
+          console.log('🧹 Clearing user due to no session');
+          setUserWithBackup(null);
         }
       }
     } catch (error) {
-      console.error('Error checking session:', error);
+      console.error('❌ Error checking session:', error);
+      // On error, try to restore from backup if we don't have a user
+      if (!user) {
+        restoreUserFromBackup();
+      }
+    } finally {
+      setSessionCheckInProgress(false);
+      releaseSessionLock();
     }
   };
 
-  // Update user data from Supabase user
+  // Enhanced user data update with retry logic
   const updateUserData = async (authUser: any, showLoading = true) => {
     if (showLoading) {
       setIsLoading(true);
@@ -167,55 +422,75 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     try {
       if (!authUser?.email) {
-        setUser(null);
+        setUserWithBackup(null);
         return;
       }
       
-      // Get user role
+      // Get user role with retry logic
       let role: UserRole = 'user';
+      let retryCount = 0;
+      const maxRetries = 3;
       
-      try {
-        // Check if admin
-        const { data: adminData } = await supabase
-          .from('aditi_admins')
-          .select('*')
-          .eq('email', authUser.email)
-          .single();
-        
-        if (adminData) {
-          role = 'admin';
-        } else {
-          // Check if manager
-          const { data: managerData } = await supabase
-            .from('aditi_teams')
+      while (retryCount < maxRetries) {
+        try {
+          // Check if admin
+          const { data: adminData } = await supabase
+            .from('aditi_admins')
             .select('*')
-            .eq('manager_email', authUser.email);
+            .eq('email', authUser.email)
+            .single();
           
-          if (managerData && managerData.length > 0) {
-            role = 'manager';
+          if (adminData) {
+            role = 'admin';
+            break;
+          } else {
+            // Check if manager
+            const { data: managerData } = await supabase
+              .from('aditi_teams')
+              .select('*')
+              .eq('manager_email', authUser.email);
+            
+            if (managerData && managerData.length > 0) {
+              role = 'manager';
+            }
+            break;
+          }
+        } catch (error) {
+          retryCount++;
+          console.error(`❌ Error checking user role (attempt ${retryCount}):`, error);
+          if (retryCount >= maxRetries) {
+            console.log('⚠️ Max retries reached, using default role');
+          } else {
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
           }
         }
-      } catch (error) {
-        console.error('Error checking user role:', error);
       }
       
-      // Get team info
+      // Get team info with retry logic
       let teamId = undefined;
       let teamName = undefined;
+      retryCount = 0;
       
-      try {
-        const { data: userData } = await supabase
-          .from('aditi_team_members')
-          .select('*, aditi_teams(*)')
-          .eq('employee_email', authUser.email)
-          .single();
-        
-        if (userData) {
-          teamId = userData.team_id;
-          teamName = userData.aditi_teams?.team_name;
+      while (retryCount < maxRetries) {
+        try {
+          const { data: userData } = await supabase
+            .from('aditi_team_members')
+            .select('*, aditi_teams(*)')
+            .eq('employee_email', authUser.email)
+            .single();
+          
+          if (userData) {
+            teamId = userData.team_id;
+            teamName = userData.aditi_teams?.team_name;
+          }
+          break;
+        } catch (error) {
+          retryCount++;
+          console.error(`❌ Error getting user team info (attempt ${retryCount}):`, error);
+          if (retryCount < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          }
         }
-      } catch (error) {
-        console.error('Error getting user team info:', error);
       }
       
       // Create user object
@@ -229,13 +504,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         lastChecked: Date.now()
       };
       
-      // Update state and cache
-      setUser(updatedUser);
-      localStorage.setItem(USER_CACHE_KEY, JSON.stringify(updatedUser));
+      // Update state with backup
+      setUserWithBackup(updatedUser);
+      console.log('✅ User data updated successfully:', updatedUser.email, updatedUser.role);
       
     } catch (error) {
-      console.error('Error updating user data:', error);
-      setUser(null);
+      console.error('❌ Error updating user data:', error);
+      // Don't clear user on error, try to restore from backup
+      if (!user) {
+        restoreUserFromBackup();
+      }
     } finally {
       if (showLoading) {
         setIsLoading(false);
@@ -244,28 +522,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshUser = async () => {
+    if (sessionCheckInProgress) {
+      console.log('⏳ Session check in progress, skipping refresh');
+      return;
+    }
+
     try {
       setIsLoading(true);
+      setSessionCheckInProgress(true);
       
       const { data: { user: authUser }, error } = await supabase.auth.getUser();
       
       if (error) {
-        console.error('Error getting user:', error);
-        setUser(null);
+        console.error('❌ Error getting user:', error);
+        // Try to restore from backup instead of clearing
+        if (!user) {
+          restoreUserFromBackup();
+        }
         return;
       }
       
       if (authUser) {
         await updateUserData(authUser);
       } else {
-        setUser(null);
-        localStorage.removeItem(USER_CACHE_KEY);
+        // Only clear if no backup available
+        const backup = restoreUserFromBackup();
+        if (!backup) {
+          setUserWithBackup(null);
+        }
       }
     } catch (error) {
-      console.error('Error refreshing user:', error);
-      setUser(null);
+      console.error('❌ Error refreshing user:', error);
+      // Try to restore from backup
+      if (!user) {
+        restoreUserFromBackup();
+      }
     } finally {
       setIsLoading(false);
+      setSessionCheckInProgress(false);
     }
   };
 
@@ -275,14 +569,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return user.role;
     }
     
-    // Try to refresh the user first
+    // Try to restore from backup
+    const restoredUser = restoreUserFromBackup();
+    if (restoredUser?.role) {
+      return restoredUser.role;
+    }
+    
+    // Try to refresh the user
     try {
       await refreshUser();
       if (user?.role) {
         return user.role;
       }
     } catch (error) {
-      console.error('Error during refresh for role check:', error);
+      console.error('❌ Error during refresh for role check:', error);
     }
     
     // Default to user role if we can't determine
@@ -293,287 +593,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setIsLoading(true);
       
-      console.log('🔄 Starting AGGRESSIVE cache clearing and sign out process...');
+      console.log('🔄 Starting sign out process...');
       
-      // Clear user state immediately to prevent UI confusion
-      setUser(null);
+      // Clear user state immediately
+      setUserWithBackup(null);
       
-      // STEP 1: AGGRESSIVE LOCALSTORAGE CLEARING
-      console.log('🧹 STEP 1: Aggressively clearing localStorage...');
-      
-      // First, clear our specific keys
-      const ourSpecificKeys = [
-        USER_CACHE_KEY,
-        'aditi_supabase_auth',
-        'aditi_tab_state',
-        'bypass_team_check'
-      ];
-      
-      ourSpecificKeys.forEach(key => {
-        localStorage.removeItem(key);
-        console.log(`✅ Removed: ${key}`);
-      });
-      
-      // Then, clear ALL keys that might be related to authentication
-      const allKeys = Object.keys(localStorage);
-      console.log(`🔍 Found ${allKeys.length} localStorage keys, checking each...`);
-      
-      allKeys.forEach(key => {
-        // Remove any key that looks like it could be auth-related
-        if (
-          key.startsWith('sb-') ||           // Supabase keys
-          key.startsWith('supabase') ||      // Any supabase variants
-          key.includes('auth') ||            // Any auth-related
-          key.includes('session') ||         // Session data
-          key.includes('token') ||           // Token data
-          key.includes('user') ||            // User data
-          key.includes('aditi') ||           // Our app data
-          key.includes('login') ||           // Login data
-          key.includes('password') ||        // Password data
-          key.includes('cache') ||           // Any cache
-          key.includes('state')              // State data
-        ) {
-          localStorage.removeItem(key);
-          console.log(`🗑️ Aggressively removed: ${key}`);
+      // Clear all localStorage data
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('aditi_') || key.startsWith('dashboard_'))) {
+          keysToRemove.push(key);
         }
-      });
-      
-      // STEP 2: AGGRESSIVE SESSIONSTORAGE CLEARING
-      console.log('🧹 STEP 2: Aggressively clearing sessionStorage...');
-      
-      // Clear our specific session keys
-      const sessionKeys = [
-        'aditi_tab_id',
-        'returning_from_tab_switch',
-        'prevent_auto_refresh'
-      ];
-      
-      sessionKeys.forEach(key => {
-        sessionStorage.removeItem(key);
-        console.log(`✅ Removed session: ${key}`);
-      });
-      
-      // Clear ALL session storage keys that might be auth-related
-      const allSessionKeys = Object.keys(sessionStorage);
-      console.log(`🔍 Found ${allSessionKeys.length} sessionStorage keys, checking each...`);
-      
-      allSessionKeys.forEach(key => {
-        if (
-          key.startsWith('sb-') ||
-          key.startsWith('supabase') ||
-          key.includes('auth') ||
-          key.includes('session') ||
-          key.includes('token') ||
-          key.includes('user') ||
-          key.includes('aditi') ||
-          key.includes('login') ||
-          key.includes('cache') ||
-          key.includes('state')
-        ) {
-          sessionStorage.removeItem(key);
-          console.log(`🗑️ Aggressively removed session: ${key}`);
-        }
-      });
-      
-      // STEP 3: AGGRESSIVE BROWSER CACHE CLEARING (where possible)
-      console.log('🧹 STEP 3: Attempting browser cache clearing...');
-      
-      try {
-        // Clear any cached responses if available
-        if ('caches' in window) {
-          const cacheNames = await caches.keys();
-          console.log(`🔍 Found ${cacheNames.length} cache stores...`);
-          
-          await Promise.all(
-            cacheNames.map(async (cacheName) => {
-              await caches.delete(cacheName);
-              console.log(`🗑️ Deleted cache: ${cacheName}`);
-            })
-          );
-        }
-      } catch (cacheError) {
-        console.log('ℹ️ Browser cache clearing not available or failed:', (cacheError as Error).message);
       }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
       
-      // STEP 4: CLEAR INDEXEDDB (where possible)
-      console.log('🧹 STEP 4: Attempting IndexedDB clearing...');
+      // Clear session storage
+      sessionStorage.clear();
       
-      try {
-        if ('indexedDB' in window) {
-          // Get all databases (this might not work in all browsers)
-          const databases = await indexedDB.databases?.() || [];
-          
-          for (const db of databases) {
-            if (db.name && (
-              db.name.includes('supabase') ||
-              db.name.includes('auth') ||
-              db.name.includes('aditi')
-            )) {
-              const deleteReq = indexedDB.deleteDatabase(db.name);
-              deleteReq.onsuccess = () => console.log(`🗑️ Deleted IndexedDB: ${db.name}`);
-              deleteReq.onerror = () => console.log(`❌ Failed to delete IndexedDB: ${db.name}`);
-            }
-          }
-        }
-      } catch (idbError) {
-        console.log('ℹ️ IndexedDB clearing not available or failed:', (idbError as Error).message);
-      }
+      // Sign out from Supabase
+      await supabase.auth.signOut();
       
-      // STEP 5: MEMORY CLEANUP
-      console.log('🧹 STEP 5: Memory and object cleanup...');
+      console.log('✅ Sign out completed');
       
-      // Force garbage collection hint (if available)
-      if (window.gc) {
-        window.gc();
-        console.log('🗑️ Forced garbage collection');
-      }
-      
-      console.log('✅ Completed aggressive local cleanup');
-      
-      // STEP 6: SUPABASE SIGNOUT (Multiple attempts)
-      console.log('🧹 STEP 6: Aggressive Supabase signout...');
-      
-      // First attempt - global signout
-      try {
-        const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
-        if (globalError) {
-          console.error('Global signout error:', globalError);
-        } else {
-          console.log('✅ Global Supabase signout successful');
-        }
-      } catch (globalErr) {
-        console.error('Global signout failed:', globalErr);
-      }
-      
-      // Second attempt - local signout
-      try {
-        const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
-        if (localError) {
-          console.error('Local signout error:', localError);
-        } else {
-          console.log('✅ Local Supabase signout successful');
-        }
-      } catch (localErr) {
-        console.error('Local signout failed:', localErr);
-      }
-      
-      // Third attempt - force clear session
-      try {
-        await supabase.auth.signOut();
-        console.log('✅ Default Supabase signout successful');
-      } catch (defaultErr) {
-        console.error('Default signout failed:', defaultErr);
-      }
-      
-      // STEP 7: FINAL VERIFICATION AND CLEANUP
-      console.log('🧹 STEP 7: Final verification...');
-      
-      // Verify session is actually cleared
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          console.warn('⚠️ Session still exists after signout attempts!');
-          // Try one more time
-          await supabase.auth.signOut({ scope: 'global' });
-        } else {
-          console.log('✅ Session successfully cleared');
-        }
-      } catch (sessionCheck) {
-        console.log('ℹ️ Session check failed (which is good - means no session)');
-      }
-      
-      // STEP 8: FINAL STORAGE RE-CHECK
-      console.log('🧹 STEP 8: Final storage verification...');
-      
-      // Double-check that our critical keys are really gone
-      const criticalKeys = [USER_CACHE_KEY, 'aditi_supabase_auth'];
-      criticalKeys.forEach(key => {
-        if (localStorage.getItem(key)) {
-          localStorage.removeItem(key);
-          console.log(`🔥 Force-removed stubborn key: ${key}`);
-        }
-      });
-      
-      toast.success('Signed out successfully with aggressive cleanup');
-      
-      // Force redirect to home page
-      if (router.pathname !== '/') {
-        await router.push('/');
-      }
-      
-      console.log('🎉 AGGRESSIVE sign out process completed');
-      
-      // STEP 9: NUCLEAR OPTION - FORCE RELOAD
-      console.log('🧹 STEP 9: Nuclear option - forcing page reload...');
-      
-      // Force page reload after a short delay to ensure completely clean state
-      setTimeout(() => {
-        console.log('💥 NUCLEAR: Forcing complete page reload for absolute clean state');
-        // Use location.replace instead of location.href to avoid back button issues
-        window.location.replace('/');
-      }, 500);
+      // Redirect to home
+      router.push('/');
       
     } catch (error) {
-      console.error('❌ Error during aggressive signout:', error);
-      
-      // EMERGENCY NUCLEAR CLEANUP
-      console.log('🚨 EMERGENCY: Performing nuclear cleanup...');
-      
-      // Clear user state
-      setUser(null);
-      
-      // Nuclear localStorage clearing - remove EVERYTHING that could be ours
-      try {
-        const allKeys = Object.keys(localStorage);
-        allKeys.forEach(key => {
-          if (key.includes('aditi') || key.includes('sb-') || key.includes('supabase')) {
-            localStorage.removeItem(key);
-          }
-        });
-        console.log('💥 Emergency localStorage nuclear cleanup completed');
-      } catch (clearError) {
-        console.error('💥 Even nuclear cleanup failed:', clearError);
-        // Last resort - try to clear everything (dangerous but necessary)
-        try {
-          localStorage.clear();
-          sessionStorage.clear();
-          console.log('💥 ULTIMATE NUCLEAR: Cleared ALL storage');
-        } catch (ultimateError) {
-          console.error('💥 Ultimate nuclear cleanup failed:', ultimateError);
-        }
-      }
-      
-      toast.success('Emergency signout completed');
-      
-      if (router.pathname !== '/') {
-        router.push('/');
-      }
-      
-      // Nuclear reload even on error
-      setTimeout(() => {
-        window.location.replace('/');
-      }, 1000);
-      
+      console.error('❌ Error during sign out:', error);
+      toast.error('Error signing out');
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider 
-      value={{
-        user,
-        isLoading,
-        signOut,
-        checkUserRole,
-        refreshUser
-      }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      isLoading,
+      signOut,
+      checkUserRole,
+      refreshUser,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  return useContext(AuthContext);
-} 
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}; 

@@ -52,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       // Add test admin users
       const testAdmins = [
-        { email: 'anubhav.chaudhary@aditiconsulting.com', name: 'Anubhav Chaudhary' },
+       // { email: 'anubhav.chaudhary@aditiconsulting.com', name: 'Anubhav Chaudhary' },
         { email: 'anubhavchaudhary459@gmail.com', name: 'Anubhav Chaudhary' },
         { email: 'shivaku@aditiconsulting.com', name: 'Shiva' },
         { email: 'admin@test.com', name: 'Test Admin' }
