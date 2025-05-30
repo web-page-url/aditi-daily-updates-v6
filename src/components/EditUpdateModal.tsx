@@ -442,7 +442,7 @@ export default function EditUpdateModal({ isOpen, onClose, update, onSuccess }: 
                 type="date"
                 id="start_date"
                 name="start_date"
-                min={new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                // min={new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                 value={formData.start_date || ''}
                 onChange={handleChange}
                 className={`shadow-sm block w-full sm:text-sm rounded-md border bg-[#262d40] text-white ${
@@ -463,7 +463,7 @@ export default function EditUpdateModal({ isOpen, onClose, update, onSuccess }: 
                 type="date"
                 id="end_date"
                 name="end_date"
-                min={new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                // min={new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                 value={formData.end_date || ''}
                 onChange={handleChange}
                 className={`shadow-sm block w-full sm:text-sm rounded-md border bg-[#262d40] text-white ${
