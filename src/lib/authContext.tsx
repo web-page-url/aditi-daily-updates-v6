@@ -139,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionStorage.setItem('aditi_current_user', JSON.stringify(parsedUser));
         return parsedUser;
       }
-    } catch (err) {
+      } catch (err) {
       console.error('❌ Error restoring user from backup:', err);
     }
     return null;
@@ -222,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!restoredUser || !isPageRefresh) {
       const sessionCheckDelay = setTimeout(() => {
         if (!sessionCheckInProgress) {
-          checkSessionQuietly();
+    checkSessionQuietly();
         }
       }, 100);
       
@@ -275,7 +275,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // Only check if enough time has passed since last check
           const timeSinceLastCheck = Date.now() - lastSessionCheck;
           if (timeSinceLastCheck > 5000 && !sessionCheckInProgress) { // 5 second minimum
-            checkSessionQuietly();
+          checkSessionQuietly();
           }
         }, 500);
         
@@ -432,26 +432,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const maxRetries = 3;
       
       while (retryCount < maxRetries) {
-        try {
-          // Check if admin
-          const { data: adminData } = await supabase
-            .from('aditi_admins')
-            .select('*')
-            .eq('email', authUser.email)
-            .single();
-          
-          if (adminData) {
-            role = 'admin';
+      try {
+        // Check if admin
+        const { data: adminData } = await supabase
+          .from('aditi_admins')
+          .select('*')
+          .eq('email', authUser.email)
+          .single();
+        
+        if (adminData) {
+          role = 'admin';
             break;
-          } else {
-            // Check if manager
-            const { data: managerData } = await supabase
-              .from('aditi_teams')
-              .select('*')
-              .eq('manager_email', authUser.email);
-            
-            if (managerData && managerData.length > 0) {
-              role = 'manager';
+        } else {
+          // Check if manager
+          const { data: managerData } = await supabase
+            .from('aditi_teams')
+            .select('*')
+            .eq('manager_email', authUser.email);
+          
+          if (managerData && managerData.length > 0) {
+            role = 'manager';
             }
             break;
           }
@@ -472,19 +472,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       retryCount = 0;
       
       while (retryCount < maxRetries) {
-        try {
-          const { data: userData } = await supabase
-            .from('aditi_team_members')
-            .select('*, aditi_teams(*)')
-            .eq('employee_email', authUser.email)
-            .single();
-          
-          if (userData) {
-            teamId = userData.team_id;
-            teamName = userData.aditi_teams?.team_name;
-          }
+      try {
+        const { data: userData } = await supabase
+          .from('aditi_team_members')
+          .select('*, aditi_teams(*)')
+          .eq('employee_email', authUser.email)
+          .single();
+        
+        if (userData) {
+          teamId = userData.team_id;
+          teamName = userData.aditi_teams?.team_name;
+        }
           break;
-        } catch (error) {
+      } catch (error) {
           retryCount++;
           console.error(`❌ Error getting user team info (attempt ${retryCount}):`, error);
           if (retryCount < maxRetries) {
@@ -612,7 +612,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionStorage.clear();
       
       // Sign out from Supabase
-      await supabase.auth.signOut();
+        await supabase.auth.signOut();
       
       console.log('✅ Sign out completed');
       
@@ -629,10 +629,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user,
-      isLoading,
-      signOut,
-      checkUserRole,
+        user,
+        isLoading,
+        signOut,
+        checkUserRole,
       refreshUser,
     }}>
       {children}

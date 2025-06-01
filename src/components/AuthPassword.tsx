@@ -540,15 +540,19 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             >
               {isLoading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
             </button>
+            {/* COMMENTED OUT - Browser password save text */}
+            {/*
             {isLogin && (
               <p className="mt-2 text-xs text-center text-gray-400">
                 Your browser can securely save your password for this site
               </p>
             )}
+            */}
           </div>
         </form>
 
-        {/* Debug Mode Toggle */}
+        {/* Debug Mode Toggle - COMMENTED OUT */}
+        {/*
         <div className="mt-4 text-center">
           <button
             onClick={() => setDebugMode(!debugMode)}
@@ -557,8 +561,10 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             {debugMode ? 'Hide Debug' : 'Show Debug Info'}
           </button>
         </div>
+        */}
 
-        {/* Debug Information */}
+        {/* Debug Information - COMMENTED OUT */}
+        {/*
         {debugMode && debugInfo && (
           <div className="mt-4 p-3 bg-gray-900/50 border border-gray-700 rounded-md">
             <h4 className="text-xs font-medium text-gray-300 mb-2">Debug Information</h4>
@@ -567,6 +573,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             </pre>
           </div>
         )}
+        */}
 
         {/* Troubleshooting tips for email verification */}
         {showTroubleshooting && !isLogin && (
@@ -655,7 +662,8 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
           </div>
         )}
 
-        {/* Quick Access for Testing */}
+        {/* Quick Access for Testing - COMMENTED OUT */}
+        {/*
         {debugMode && (
           <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-md">
             <h4 className="text-xs font-medium text-yellow-300 mb-2">Quick Test Accounts</h4>
@@ -666,7 +674,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
               <p className="text-yellow-400">Note: You still need the correct password</p>
             </div>
             
-            {/* Team Assignment Bypass Toggle */}
+            // Team Assignment Bypass Toggle
             <div className="mt-3 pt-3 border-t border-yellow-600">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-300">Team Assignment Check:</span>
@@ -690,7 +698,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
               </p>
             </div>
             
-            {/* Clear Cache Button */}
+            // Clear Cache Button
             <div className="mt-3 pt-3 border-t border-yellow-600">
               <button
                 onClick={() => {
@@ -709,8 +717,10 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             </div>
           </div>
         )}
+        */}
 
-        {/* Login Issue Helper */}
+        {/* Login Issue Helper - COMMENTED OUT */}
+        {/*
         {isLogin && !debugMode && (
           <div className="mt-4 text-center">
             <p className="text-xs text-gray-500 mb-2">
@@ -728,6 +738,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             </button>
           </div>
         )}
+        */}
       </>
     );
   }
@@ -845,11 +856,14 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             >
               {isLoading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
             </button>
+            {/* COMMENTED OUT - Browser password save text */}
+            {/*
             {isLogin && (
               <p className="mt-2 text-xs text-center text-gray-400">
                 Your browser can securely save your password for this site
               </p>
             )}
+            */}
           </div>
         </form>
 
@@ -937,100 +951,6 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
                 Password reset email sent! Check your inbox and follow the instructions.
               </div>
             )}
-          </div>
-        )}
-
-        {/* Debug Mode Toggle */}
-        <div className="mt-4 text-center">
-          <button
-            onClick={() => setDebugMode(!debugMode)}
-            className="text-xs text-gray-500 hover:text-gray-400 transition-colors"
-          >
-            {debugMode ? 'Hide Debug' : 'Show Debug Info'}
-          </button>
-        </div>
-
-        {/* Debug Information */}
-        {debugMode && debugInfo && (
-          <div className="mt-4 p-3 bg-gray-900/50 border border-gray-700 rounded-md">
-            <h4 className="text-xs font-medium text-gray-300 mb-2">Debug Information</h4>
-            <pre className="text-xs text-gray-400 overflow-auto">
-              {JSON.stringify(debugInfo, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* Quick Access for Testing */}
-        {debugMode && (
-          <div className="mt-4 p-3 bg-yellow-900/30 border border-yellow-700 rounded-md">
-            <h4 className="text-xs font-medium text-yellow-300 mb-2">Quick Test Accounts</h4>
-            <p className="text-xs text-gray-400 mb-2">For testing purposes, try these accounts:</p>
-            <div className="space-y-1 text-xs text-gray-300">
-              <p>Admin: anubhav.chaudhary@aditiconsulting.com</p>
-              <p>Admin: anubhavchaudhary459@gmail.com</p>
-              <p className="text-yellow-400">Note: You still need the correct password</p>
-            </div>
-            
-            {/* Team Assignment Bypass Toggle */}
-            <div className="mt-3 pt-3 border-t border-yellow-600">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-300">Team Assignment Check:</span>
-                <button
-                  onClick={() => {
-                    const current = localStorage.getItem('bypass_team_check') === 'true';
-                    localStorage.setItem('bypass_team_check', (!current).toString());
-                    toast.success(current ? 'Team checking enabled' : 'Team checking bypassed');
-                  }}
-                  className={`text-xs px-2 py-1 rounded transition-colors ${
-                    localStorage.getItem('bypass_team_check') === 'true'
-                      ? 'bg-red-600 text-white'
-                      : 'bg-green-600 text-white'
-                  }`}
-                >
-                  {localStorage.getItem('bypass_team_check') === 'true' ? 'Bypassed' : 'Enabled'}
-                </button>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">
-                Toggle to bypass "not assigned to team" errors during testing
-              </p>
-            </div>
-            
-            {/* Clear Cache Button */}
-            <div className="mt-3 pt-3 border-t border-yellow-600">
-              <button
-                onClick={() => {
-                  clearAllAuthData();
-                  setFormData({ email: '', password: '', confirmPassword: '' });
-                  setDebugInfo(null);
-                  toast.success('All authentication cache cleared! Try logging in again.');
-                }}
-                className="w-full bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded transition-colors"
-              >
-                🧹 Clear All Cache & Reset Form
-              </button>
-              <p className="text-xs text-gray-400 mt-1">
-                Use this if you're experiencing login issues after logout
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Login Issue Helper */}
-        {isLogin && !debugMode && (
-          <div className="mt-4 text-center">
-            <p className="text-xs text-gray-500 mb-2">
-              Having trouble logging in after logout?
-            </p>
-            <button
-              onClick={() => {
-                clearAllAuthData();
-                setFormData({ email: '', password: '', confirmPassword: '' });
-                toast.success('Authentication cache cleared! Please try again.');
-              }}
-              className="text-xs text-blue-400 hover:text-blue-300 underline transition-colors"
-            >
-              Clear Cache & Try Again
-            </button>
           </div>
         )}
 
