@@ -10,6 +10,7 @@ import { useAuth } from '../lib/authContext';
 import ProtectedRoute from '../components/ProtectedRoute';
 import EditUpdateModal from '../components/EditUpdateModal';
 import { isReturningFromTabSwitch, preventNextTabSwitchRefresh } from '../lib/tabSwitchUtil';
+import { SEO_CONFIG, generatePageTitle, generateMetaDescription, generateCanonicalUrl, generateOpenGraphData, generateTwitterCardData } from '../lib/seoConfig';
 
 interface DashboardUser {
   userName: string;
@@ -57,7 +58,7 @@ export default function Dashboard() {
 
   // Load saved dashboard state from localStorage
   useEffect(() => {
-    if (user) {
+    if (user && typeof window !== 'undefined') {
       try {
         // Load saved filters and state
         const savedActiveTab = localStorage.getItem(`dashboard_activeTab_${user.email}`);
@@ -94,42 +95,42 @@ export default function Dashboard() {
 
   // Save active tab to localStorage whenever it changes
   useEffect(() => {
-    if (user?.email) {
+    if (user?.email && typeof window !== 'undefined') {
       localStorage.setItem(`dashboard_activeTab_${user.email}`, activeTab);
     }
   }, [activeTab, user]);
 
   // Save selected team to localStorage whenever it changes
   useEffect(() => {
-    if (user?.email) {
+    if (user?.email && typeof window !== 'undefined') {
       localStorage.setItem(`dashboard_selectedTeam_${user.email}`, selectedTeam);
     }
   }, [selectedTeam, user]);
 
   // Save date range to localStorage whenever it changes
   useEffect(() => {
-    if (user?.email) {
+    if (user?.email && typeof window !== 'undefined') {
       localStorage.setItem(`dashboard_dateRange_${user.email}`, JSON.stringify(dateRange));
     }
   }, [dateRange, user]);
 
   // Save expanded rows to localStorage whenever they change
   useEffect(() => {
-    if (user?.email) {
+    if (user?.email && typeof window !== 'undefined') {
       localStorage.setItem(`dashboard_expandedRows_${user.email}`, JSON.stringify(expandedRows));
     }
   }, [expandedRows, user]);
 
   // Save current page to localStorage whenever it changes
   useEffect(() => {
-    if (user?.email) {
+    if (user?.email && typeof window !== 'undefined') {
       localStorage.setItem(`dashboard_currentPage_${user.email}`, currentPage.toString());
     }
   }, [currentPage, user]);
 
   // Save fetched data to localStorage whenever it changes
   useEffect(() => {
-    if (user?.email && historicalData.length > 0) {
+    if (user?.email && historicalData.length > 0 && typeof window !== 'undefined') {
       try {
         // Implementation of data chunking for large datasets
         // Break down the historical data into smaller chunks to avoid localStorage size limits
@@ -182,7 +183,7 @@ export default function Dashboard() {
 
   // Update the existing load function to also load historicalData, filteredData, stats and lastRefreshed
   useEffect(() => {
-    if (user) {
+    if (user && typeof window !== 'undefined') {
       try {
         // First, check if we have chunked data
         const chunkCountStr = localStorage.getItem(`dashboard_historicalData_chunkCount_${user.email}`);
@@ -385,13 +386,14 @@ export default function Dashboard() {
 
   // Add function to try recovering data from localStorage without authentication
   const tryRecoverFromLocalStorage = () => {
-    console.log('Attempting to recover data from localStorage');
+    if (typeof window === 'undefined') return;
     
+    console.log('Attempting to recover data from localStorage');
+
     try {
       // Get cached email from localStorage
       let userEmail = null;
       
-      // Try to get the user email from various sources
       const cachedUser = localStorage.getItem('aditi_user_cache');
       if (cachedUser) {
         try {
@@ -476,14 +478,19 @@ export default function Dashboard() {
   // Add a new effect to handle visibility changes (tab switching)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchDataSilently(selectedTeam);
-        toast.success('Dashboard refreshed after tab switch');
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchTeamsBasedOnRole();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
     };
   }, [selectedTeam]);
 
@@ -693,7 +700,7 @@ export default function Dashboard() {
   // Modify visibility change handler to ensure filters are preserved
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && user) {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && user) {
         // Save current filter state
         const currentFilters = {
           activeTab,
@@ -713,9 +720,14 @@ export default function Dashboard() {
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
     };
   }, [user, activeTab, selectedTeam, dateRange]);
 
@@ -783,7 +795,7 @@ export default function Dashboard() {
     if (user) {
       fetchData(selectedTeam);
     }
-  }, [selectedTeam, user]);
+  }, [selectedTeam, dateRange, user]);
 
   const toggleRowExpansion = (id: string) => {
     setExpandedRows(prev => ({
@@ -793,6 +805,8 @@ export default function Dashboard() {
   };
 
   const exportToCSV = () => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    
     const headers = [
       'Date',
       'Start Date',
@@ -839,19 +853,17 @@ export default function Dashboard() {
   };
 
   const refreshData = async () => {
-    // Prevent multiple rapid refreshes
-    if (isRefreshing) {
-      return;
-    }
     setIsRefreshing(true);
-    preventNextTabSwitchRefresh();
     try {
       await fetchData(selectedTeam);
       const now = new Date();
       setLastRefreshed(now);
-      if (user?.email) {
+      
+      // Save last refreshed time to localStorage
+      if (user?.email && typeof window !== 'undefined') {
         localStorage.setItem(`dashboard_lastRefreshed_${user.email}`, now.toISOString());
       }
+      
       toast.success('Data refreshed successfully');
     } catch (error) {
       console.error('Error refreshing data:', error);
@@ -861,7 +873,6 @@ export default function Dashboard() {
     }
   };
 
-  // Add a silent data fetching function (no loading state, for background refresh)
   const fetchDataSilently = async (teamFilter: string = '') => {
     try {
       console.log('Silent data refresh starting, teamFilter:', teamFilter);
@@ -946,8 +957,8 @@ export default function Dashboard() {
       setLastRefreshed(now);
       setDataLoaded(true);
 
-      // No more caching needed
-      if (user?.email) {
+      // Save last refreshed time to localStorage  
+      if (user?.email && typeof window !== 'undefined') {
         localStorage.setItem(`dashboard_lastRefreshed_${user.email}`, now.toISOString());
       }
     } catch (error) {
@@ -965,6 +976,8 @@ export default function Dashboard() {
 
   // Restore the Clear Cache button click handler
   const clearCache = () => {
+    if (typeof window === 'undefined') return;
+    
     if (user?.email) {
       // Clear all localStorage data related to the dashboard
       for (let i = 0; i < 100; i++) { // Clear potential chunked data
@@ -991,7 +1004,7 @@ export default function Dashboard() {
   // Handle visibility changes for tab switches
   useEffect(() => {
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && user) {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && user) {
         // Save current filter state before potential refresh
         const currentFilters = {
           activeTab,
@@ -1001,14 +1014,16 @@ export default function Dashboard() {
         };
         
         // Store current filters in sessionStorage (temporary storage)
-        sessionStorage.setItem('current_dashboard_filters', JSON.stringify(currentFilters));
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('current_dashboard_filters', JSON.stringify(currentFilters));
+        }
         
         try {
           // Attempt to refresh data silently
           await fetchDataSilently(selectedTeam);
           
           // Restore filters and apply them
-          const savedFilters = sessionStorage.getItem('current_dashboard_filters');
+          const savedFilters = typeof window !== 'undefined' ? sessionStorage.getItem('current_dashboard_filters') : null;
           if (savedFilters) {
             const filters = JSON.parse(savedFilters);
             
@@ -1043,7 +1058,9 @@ export default function Dashboard() {
           }
           
           // Clear temporary storage
-          sessionStorage.removeItem('current_dashboard_filters');
+          if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('current_dashboard_filters');
+          }
         } catch (error) {
           console.error('Error refreshing data after tab switch:', error);
           toast.error('Failed to refresh data');
@@ -1052,20 +1069,104 @@ export default function Dashboard() {
     };
 
     // Add visibility change listener
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
     
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
     };
   }, [user, activeTab, selectedTeam, dateRange, currentPage, historicalData]);
 
   return (
     <ProtectedRoute allowedRoles={['admin', 'manager']}>
       <Head>
+        {/* Enhanced Basic Meta Tags */}
         <meta charSet="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Dashboard | Aditi Daily Updates</title>
-        <meta name="description" content="Manager dashboard for Aditi daily updates tracking" />
+        
+        {/* Enhanced SEO Meta Tags */}
+        <title>{SEO_CONFIG.pages.dashboard.title}</title>
+        <meta name="description" content={SEO_CONFIG.pages.dashboard.description} />
+        <meta name="keywords" content={SEO_CONFIG.pages.dashboard.keywords.join(', ')} />
+        <meta name="author" content={SEO_CONFIG.companyName} />
+        <meta name="robots" content="noindex, nofollow" />
+        
+        {/* Enhanced Open Graph Meta Tags */}
+        <meta property="og:title" content={SEO_CONFIG.pages.dashboard.title} />
+        <meta property="og:description" content={SEO_CONFIG.pages.dashboard.description} />
+        <meta property="og:image" content={SEO_CONFIG.images.defaultOgImage} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="Aditi Daily Updates Team Management Dashboard" />
+        <meta property="og:url" content={generateCanonicalUrl('/dashboard')} />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content={SEO_CONFIG.siteName} />
+        <meta property="og:locale" content="en_US" />
+        
+        {/* Enhanced Twitter Card Meta Tags */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:site" content={SEO_CONFIG.social.twitter} />
+        <meta name="twitter:creator" content={SEO_CONFIG.social.twitter} />
+        <meta name="twitter:title" content={SEO_CONFIG.pages.dashboard.title} />
+        <meta name="twitter:description" content={SEO_CONFIG.pages.dashboard.description} />
+        <meta name="twitter:image" content={SEO_CONFIG.images.defaultOgImage} />
+        <meta name="twitter:image:alt" content="Aditi Daily Updates Team Management Dashboard" />
+        
+        {/* Business/Professional Meta Tags */}
+        <meta name="application-name" content="Aditi Daily Updates Dashboard" />
+        <meta name="apple-mobile-web-app-title" content="Team Dashboard" />
+        <meta name="msapplication-tooltip" content="Team Management Dashboard" />
+        
+        {/* Canonical URL */}
+        <link rel="canonical" href={generateCanonicalUrl('/dashboard')} />
+        
+        {/* Dashboard-specific Schema.org structured data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebPage",
+              "name": "Team Management Dashboard - Aditi Daily Updates",
+              "description": "Comprehensive team management dashboard for tracking daily progress, monitoring tasks, and managing team collaboration",
+              "url": generateCanonicalUrl('/dashboard'),
+              "inLanguage": "en-US",
+              "isPartOf": {
+                "@type": "WebSite",
+                "name": SEO_CONFIG.siteName,
+                "url": SEO_CONFIG.siteUrl
+              },
+              "about": {
+                "@type": "SoftwareApplication",
+                "name": SEO_CONFIG.siteName,
+                "description": "Enterprise task management dashboard",
+                "applicationCategory": "BusinessApplication"
+              },
+              "provider": {
+                "@type": "Organization",
+                "name": SEO_CONFIG.companyName,
+                "url": SEO_CONFIG.companyUrl
+              },
+              "mainEntity": {
+                "@type": "WebApplication",
+                "name": "Team Management Dashboard",
+                "description": "Dashboard for managing team tasks, tracking progress, and monitoring productivity",
+                "featureList": [
+                  "Real-time task tracking",
+                  "Team progress monitoring", 
+                  "Export capabilities",
+                  "Task filtering and search",
+                  "Performance analytics",
+                  "Team collaboration tools"
+                ]
+              }
+            })
+          }}
+        />
+        
         <style>{`
           .hover-shadow-custom-purple:hover {
             box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
@@ -1143,6 +1244,213 @@ export default function Dashboard() {
           </nav>
           
           <main className="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            
+            {/* Always visible stats cards (moved outside loading condition) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+              <div 
+                className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
+                onClick={() => filterByCardType('total')}
+                title="Click to view all updates"
+              >
+                <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-gray-400 text-sm">Total Updates</h3>
+                <p className="text-2xl font-bold text-white">{stats.totalUpdates}</p>
+              </div>
+               
+              <div 
+                className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
+                onClick={() => filterByCardType('completed')}
+                title="Click to view completed tasks"
+              >
+                <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-gray-400 text-sm">Completed Tasks</h3>
+                <p className="text-2xl font-bold text-green-400">{stats.completedTasks}</p>
+              </div>
+              <div 
+                className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
+                onClick={() => filterByCardType('in-progress')}
+                title="Click to view in-progress tasks"
+              >
+                <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 6 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-gray-400 text-sm">In Progress</h3>
+                <p className="text-2xl font-bold text-blue-400">{stats.inProgressTasks}</p>
+              </div>
+              <div 
+                className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
+                onClick={() => filterByCardType('blocked')}
+                title="Click to view blocked tasks"
+              >
+                <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 6 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </div>
+                <h3 className="text-gray-400 text-sm">Stuck (Blockers)</h3>
+                <p className="text-2xl font-bold text-red-400">{stats.stuckTasks}</p>
+              </div>
+            </div>
+            
+            {/* Always visible filter controls (moved outside loading condition) */}
+            <div className="bg-[#1e2538] rounded-lg shadow-lg p-4 mb-6">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-4 md:mb-0">
+                  <div>
+                    <label htmlFor="team-filter" className="block text-sm text-gray-400 mb-1">Team</label>
+                    <select
+                      id="team-filter"
+                      value={selectedTeam}
+                      onChange={(e) => setSelectedTeam(e.target.value)}
+                      className="bg-[#262d40] border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="">All Teams</option>
+                      {(Array.isArray(teams) ? teams : []).map((team, index) => (
+                        <option key={index} value={team.id}>{team.team_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="date-start" className="block text-sm text-gray-400 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      id="date-start"
+                      value={dateRange.start}
+                      onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                      className="bg-[#262d40] border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="date-end" className="block text-sm text-gray-400 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      id="date-end"
+                      value={dateRange.end}
+                      onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                      className="bg-[#262d40] border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    onClick={refreshData}
+                    disabled={isRefreshing}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isRefreshing ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Refreshing...
+                      </>
+                    ) : (
+                      <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh Data
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={exportToCSV}
+                    disabled={!filteredData.length || isRefreshing}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Export CSV
+                  </button>
+                  <button
+                    onClick={clearCache}
+                    className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-300"
+                  >  
+                    {/* Clear Cache */}
+                  </button>
+                </div>
+              </div>
+              {lastRefreshed && (
+                <div className="mt-3 text-xs text-gray-400 text-right">
+                  Last updated: {lastRefreshed.toLocaleString()} 
+                  {dataLoaded && !isLoading && (
+                    <span className="ml-2 text-green-400">• Data preserved across tabs</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Always visible filter tabs (moved outside loading condition) */}
+            <div className="mb-6">
+              <div className="border-b border-gray-700">
+                <nav className="flex flex-wrap -mb-px">
+                  <button
+                    onClick={() => setActiveTab('all')}
+                    className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
+                      activeTab === 'all'
+                        ? 'border-purple-500 text-purple-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    All Updates
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('recent')}
+                    className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
+                      activeTab === 'recent'
+                        ? 'border-purple-500 text-purple-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    Recent (5 Days)
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('blockers')}
+                    className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
+                      activeTab === 'blockers'
+                        ? 'border-purple-500 text-purple-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    Blockers Only
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('completed')}
+                    className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
+                      activeTab === 'completed'
+                        ? 'border-purple-500 text-purple-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    Completed
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('in-progress')}
+                    className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
+                      activeTab === 'in-progress'
+                        ? 'border-purple-500 text-purple-400'
+                        : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    In Progress
+                  </button>
+                </nav>
+              </div>
+            </div>
+
             {isLoading ? (
               <div className="flex justify-center items-center h-64">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
@@ -1171,219 +1479,6 @@ export default function Dashboard() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
-                  <div 
-                    className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
-                    onClick={() => filterByCardType('total')}
-                    title="Click to view all updates"
-                  >
-                    <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-gray-400 text-sm">Total Updates</h3>
-                    <p className="text-2xl font-bold text-white">{stats.totalUpdates}</p>
-                  </div>
-                   
-                  <div 
-                    className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
-                    onClick={() => filterByCardType('completed')}
-                    title="Click to view completed tasks"
-                  >
-                    <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                  </div>
-                    <h3 className="text-gray-400 text-sm">Completed Tasks</h3>
-                    <p className="text-2xl font-bold text-green-400">{stats.completedTasks}</p>
-                  </div>
-                  <div 
-                    className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
-                    onClick={() => filterByCardType('in-progress')}
-                    title="Click to view in-progress tasks"
-                  >
-                    <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-gray-400 text-sm">In Progress</h3>
-                    <p className="text-2xl font-bold text-blue-400">{stats.inProgressTasks}</p>
-                  </div>
-                  <div 
-                    className="bg-[#262d40] p-4 rounded-lg shadow-lg hover-shadow-custom-purple transition-shadow duration-300 cursor-pointer hover:bg-[#2a3349] relative group"
-                    onClick={() => filterByCardType('blocked')}
-                    title="Click to view blocked tasks"
-                  >
-                    <div className="absolute top-2 right-2 text-gray-500 group-hover:text-gray-300">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </div>
-                    <h3 className="text-gray-400 text-sm">Stuck (Blockers)</h3>
-                    <p className="text-2xl font-bold text-red-400">{stats.stuckTasks}</p>
-                  </div>
-                </div>
-                
-                <div className="bg-[#1e2538] rounded-lg shadow-lg p-4 mb-6">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-4 md:mb-0">
-                      <div>
-                        <label htmlFor="team-filter" className="block text-sm text-gray-400 mb-1">Team</label>
-                        <select
-                          id="team-filter"
-                          value={selectedTeam}
-                          onChange={(e) => setSelectedTeam(e.target.value)}
-                          className="bg-[#262d40] border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        >
-                          <option value="">All Teams</option>
-                          {(Array.isArray(teams) ? teams : []).map((team, index) => (
-                            <option key={index} value={team.id}>{team.team_name}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="date-start" className="block text-sm text-gray-400 mb-1">Start Date</label>
-                        <input
-                          type="date"
-                          id="date-start"
-                          value={dateRange.start}
-                          onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                          className="bg-[#262d40] border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="date-end" className="block text-sm text-gray-400 mb-1">End Date</label>
-                        <input
-                          type="date"
-                          id="date-end"
-                          value={dateRange.end}
-                          onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                          className="bg-[#262d40] border border-gray-600 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <button
-                        onClick={refreshData}
-                        disabled={isRefreshing}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isRefreshing ? (
-                          <>
-                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Refreshing...
-                          </>
-                        ) : (
-                          <>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Refresh Data
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={exportToCSV}
-                        disabled={!filteredData.length || isRefreshing}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Export CSV
-                      </button>
-                      <button
-                        onClick={clearCache}
-                        className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors duration-300"
-                      >  
-                        {/* Clear Cache   */}
-                      </button>
-                    </div>
-                  </div>
-                  {lastRefreshed && (
-                    <div className="mt-3 text-xs text-gray-400 text-right">
-                      Last updated: {lastRefreshed.toLocaleString()} 
-                      {dataLoaded && !isLoading && (
-                        <span className="ml-2 text-green-400">• Data preserved across tabs</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                
-                <div className="mb-6">
-                  <div className="border-b border-gray-700">
-                    <nav className="flex flex-wrap -mb-px">
-                      <button
-                        onClick={() => setActiveTab('all')}
-                        className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
-                          activeTab === 'all'
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        All Updates
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('recent')}
-                        className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
-                          activeTab === 'recent'
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        Recent (5 Days)
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('blockers')}
-                        className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
-                          activeTab === 'blockers'
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        Blockers Only
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('completed')}
-                        className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
-                          activeTab === 'completed'
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        Completed
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('in-progress')}
-                        className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
-                          activeTab === 'in-progress'
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        In Progress
-                      </button>
-                      <button
-                        onClick={() => setActiveTab('blocked')}
-                        className={`py-2 px-4 border-b-2 font-medium text-sm transition-colors duration-300 ${
-                          activeTab === 'blocked'
-                            ? 'border-purple-500 text-purple-400'
-                            : 'border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-400'
-                        }`}
-                      >
-                        Blocked
-                      </button>
-                    </nav>
-                  </div>
-                </div>
-                
                 {filteredData.length > 0 ? (
                   <div className="bg-[#1e2538] rounded-lg shadow-lg overflow-hidden">
                     <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch', maxWidth: '100%' }}>

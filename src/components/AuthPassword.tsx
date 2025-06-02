@@ -175,8 +175,13 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
     try {
       setIsLoading(true);
       
+      // Add SSR guard for window access
+      const redirectUrl = typeof window !== 'undefined' 
+        ? `${window.location.origin}/reset-password`
+        : '/reset-password';
+      
       const { data, error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: redirectUrl,
       });
 
       if (error) {
@@ -374,7 +379,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
           email: formData.email,
           password: formData.password,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : '',
             data: {
               email: formData.email
             }

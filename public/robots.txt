@@ -1,0 +1,39 @@
+# Robots.txt for Aditi Daily Updates System
+# Enhanced SEO configuration
+
+User-agent: *
+Allow: /
+
+# Sitemap location
+Sitemap: https://aditi-daily-updates.vercel.app/sitemap.xml
+
+# Allow all major search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+# Block specific directories if needed (currently allowing all)
+# Disallow: /api/
+# Disallow: /admin/
+
+# Crawl-delay for respectful crawling
+Crawl-delay: 1
+
+# Additional instructions for SEO
+# This file allows search engines to index the public-facing login page
+# and any documentation pages while respecting the authenticated nature
+# of the application's main functionality 

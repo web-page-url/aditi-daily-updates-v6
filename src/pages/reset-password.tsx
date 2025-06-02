@@ -15,9 +15,12 @@ export default function ResetPassword() {
 
   // Verify we have a valid hash parameter
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash || !hash.includes('type=recovery')) {
-      toast.error('Invalid or expired password reset link');
+    // Add SSR guard for window access
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      if (!hash || !hash.includes('type=recovery')) {
+        toast.error('Invalid or expired password reset link');
+      }
     }
   }, []);
 
