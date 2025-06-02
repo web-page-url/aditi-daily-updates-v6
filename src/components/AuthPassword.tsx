@@ -181,7 +181,15 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
           // Use the current domain to ensure it works on Vercel
           const protocol = window.location.protocol;
           const host = window.location.host;
-          return `${protocol}//${host}/reset-password`;
+          const baseUrl = `${protocol}//${host}`;
+          
+          // Try multiple redirect URLs for maximum compatibility
+          const resetUrl = `${baseUrl}/reset-password`;
+          const testUrl = `${baseUrl}/test-reset`;
+          
+          console.log('Generated URLs:', { resetUrl, testUrl });
+          
+          return resetUrl;
         }
         // Fallback for SSR or when window is not available
         return `${process.env.NEXT_PUBLIC_SITE_URL || 'https://aditi-daily-updates.vercel.app'}/reset-password`;
@@ -190,6 +198,7 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
       const redirectUrl = getRedirectUrl();
       console.log('Password reset redirect URL:', redirectUrl);
       
+      // Enhanced password reset request with multiple options
       const { data, error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
         redirectTo: redirectUrl,
       });

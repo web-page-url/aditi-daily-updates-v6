@@ -22,42 +22,143 @@ export default function ResetPassword() {
         // Add SSR guard for window access
         if (typeof window === 'undefined') return;
         
+        // Enhanced URL hash detection for Vercel compatibility
         const hash = window.location.hash;
-        console.log('Current URL hash:', hash);
+        const search = window.location.search;
+        const href = window.location.href;
         
-        // Check if we have a recovery hash
-        if (!hash || !hash.includes('type=recovery')) {
-          console.error('Invalid or missing recovery hash');
+        console.log('Current URL hash:', hash);
+        console.log('Current URL search:', search);
+        console.log('Current URL href:', href);
+        
+        // Manual URL parameter extraction for Vercel compatibility
+        const parseUrlParams = (url: string) => {
+          const params: Record<string, string> = {};
+          
+          // Extract from hash
+          if (url.includes('#')) {
+            const hashPart = url.split('#')[1];
+            if (hashPart) {
+              hashPart.split('&').forEach(param => {
+                const [key, value] = param.split('=');
+                if (key && value) {
+                  params[key] = decodeURIComponent(value);
+                }
+              });
+            }
+          }
+          
+          // Extract from search params
+          if (url.includes('?')) {
+            const searchPart = url.split('?')[1].split('#')[0]; // Get search params before hash
+            if (searchPart) {
+              searchPart.split('&').forEach(param => {
+                const [key, value] = param.split('=');
+                if (key && value) {
+                  params[key] = decodeURIComponent(value);
+                }
+              });
+            }
+          }
+          
+          return params;
+        };
+        
+        const urlParams = parseUrlParams(href);
+        console.log('Extracted URL parameters:', urlParams);
+        
+        // Check multiple ways to detect password reset - Vercel might use different formats
+        const hasRecoveryInHash = hash && hash.includes('type=recovery');
+        const hasRecoveryInSearch = search && search.includes('type=recovery');
+        const hasAccessTokenInHash = hash && hash.includes('access_token=');
+        const hasAccessTokenInSearch = search && search.includes('access_token=');
+        
+        // Check manual extraction
+        const hasRecoveryType = urlParams.type === 'recovery';
+        const hasAccessToken = !!urlParams.access_token;
+        
+        // More flexible recovery detection for Vercel
+        const isPasswordResetAttempt = hasRecoveryInHash || hasRecoveryInSearch || 
+                                     hasAccessTokenInHash || hasAccessTokenInSearch ||
+                                     href.includes('type=recovery') || href.includes('access_token=') ||
+                                     hasRecoveryType || hasAccessToken;
+        
+        if (!isPasswordResetAttempt) {
+          console.error('Invalid or missing recovery parameters');
+          console.log('Available URL parts:', { hash, search, href, urlParams });
           setSessionValid(false);
           setValidatingSession(false);
           toast.error('Invalid or expired password reset link. Please request a new one.');
           return;
         }
 
-        // Check if we have access_token in the hash
-        if (!hash.includes('access_token=')) {
-          console.error('No access token in recovery hash');
+        // Check if we have access_token in URL (hash or search params)
+        const hasValidAccessToken = hasAccessTokenInHash || hasAccessTokenInSearch || hasAccessToken;
+        if (!hasValidAccessToken) {
+          console.error('No access token found in URL');
+          console.log('Checked hash:', hash);
+          console.log('Checked search:', search);
+          console.log('Checked params:', urlParams);
           setSessionValid(false);
           setValidatingSession(false);
           toast.error('Invalid password reset link. Please request a new one.');
           return;
         }
 
+        // Manual session setup for Vercel compatibility if needed
+        if (hasAccessToken && hasRecoveryType && urlParams.access_token && urlParams.refresh_token) {
+          console.log('Manually setting up session from URL parameters...');
+          try {
+            const { data: manualSessionData, error: manualSessionError } = await supabase.auth.setSession({
+              access_token: urlParams.access_token,
+              refresh_token: urlParams.refresh_token
+            });
+            
+            if (manualSessionError) {
+              console.error('Manual session setup failed:', manualSessionError);
+            } else {
+              console.log('Manual session setup successful:', manualSessionData);
+            }
+          } catch (manualError) {
+            console.error('Error in manual session setup:', manualError);
+          }
+        }
+
+        // Give Supabase some time to process the URL parameters
+        console.log('Waiting for Supabase to process URL parameters...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         // Let Supabase handle the session from the URL
         const { data, error } = await supabase.auth.getSession();
+        
+        console.log('Session data:', data);
+        console.log('Session error:', error);
         
         if (error) {
           console.error('Session validation error:', error);
           setSessionValid(false);
           toast.error('Unable to validate reset link. Please try again or request a new link.');
-        } else if (data.session) {
+        } else if (data.session && data.session.user) {
           console.log('Valid session found for password reset');
+          console.log('User:', data.session.user.email);
           setSessionValid(true);
           toast.success('Password reset link validated. You can now set your new password.');
         } else {
           console.error('No valid session found');
-          setSessionValid(false);
-          toast.error('Password reset session expired. Please request a new reset link.');
+          console.log('Session data received:', data);
+          
+          // Try to refresh the session once more for Vercel compatibility
+          console.log('Attempting session refresh...');
+          const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+          
+          if (refreshError || !refreshData.session) {
+            setSessionValid(false);
+            toast.error('Password reset session expired. Please request a new reset link.');
+          } else {
+            console.log('Session refreshed successfully');
+            setSessionValid(true);
+            toast.success('Password reset link validated. You can now set your new password.');
+          }
         }
       } catch (error) {
         console.error('Error validating reset session:', error);
