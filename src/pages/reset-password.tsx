@@ -11,17 +11,64 @@ export default function ResetPassword() {
   const [resetSuccess, setResetSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [sessionValid, setSessionValid] = useState<boolean | null>(null);
+  const [validatingSession, setValidatingSession] = useState(true);
   const router = useRouter();
 
-  // Verify we have a valid hash parameter
+  // Enhanced session validation with better error handling
   useEffect(() => {
-    // Add SSR guard for window access
-    if (typeof window !== 'undefined') {
-      const hash = window.location.hash;
-      if (!hash || !hash.includes('type=recovery')) {
-        toast.error('Invalid or expired password reset link');
+    const validateSession = async () => {
+      try {
+        // Add SSR guard for window access
+        if (typeof window === 'undefined') return;
+        
+        const hash = window.location.hash;
+        console.log('Current URL hash:', hash);
+        
+        // Check if we have a recovery hash
+        if (!hash || !hash.includes('type=recovery')) {
+          console.error('Invalid or missing recovery hash');
+          setSessionValid(false);
+          setValidatingSession(false);
+          toast.error('Invalid or expired password reset link. Please request a new one.');
+          return;
+        }
+
+        // Check if we have access_token in the hash
+        if (!hash.includes('access_token=')) {
+          console.error('No access token in recovery hash');
+          setSessionValid(false);
+          setValidatingSession(false);
+          toast.error('Invalid password reset link. Please request a new one.');
+          return;
+        }
+
+        // Let Supabase handle the session from the URL
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Session validation error:', error);
+          setSessionValid(false);
+          toast.error('Unable to validate reset link. Please try again or request a new link.');
+        } else if (data.session) {
+          console.log('Valid session found for password reset');
+          setSessionValid(true);
+          toast.success('Password reset link validated. You can now set your new password.');
+        } else {
+          console.error('No valid session found');
+          setSessionValid(false);
+          toast.error('Password reset session expired. Please request a new reset link.');
+        }
+      } catch (error) {
+        console.error('Error validating reset session:', error);
+        setSessionValid(false);
+        toast.error('Error validating reset link. Please try again.');
+      } finally {
+        setValidatingSession(false);
       }
-    }
+    };
+
+    validateSession();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,18 +84,46 @@ export default function ResetPassword() {
       toast.error('Passwords do not match');
       return;
     }
+
+    // Check if session is still valid
+    if (!sessionValid) {
+      toast.error('Your reset session has expired. Please request a new password reset link.');
+      return;
+    }
     
     setLoading(true);
     
     try {
-      const { error } = await supabase.auth.updateUser({
+      // Verify we still have a valid session before updating
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError || !sessionData.session) {
+        throw new Error('Your reset session has expired. Please request a new password reset link.');
+      }
+
+      console.log('Updating user password...');
+      const { data, error } = await supabase.auth.updateUser({
         password: password
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Password update error:', error);
+        if (error.message.includes('session_not_found')) {
+          throw new Error('Your reset session has expired. Please request a new password reset link.');
+        } else if (error.message.includes('weak_password')) {
+          throw new Error('Password is too weak. Please choose a stronger password.');
+        } else {
+          throw new Error(error.message || 'Failed to update password');
+        }
+      }
       
+      console.log('Password updated successfully');
       setResetSuccess(true);
-      toast.success('Password updated successfully!');
+      toast.success('Password updated successfully! You will be redirected to login.');
+      
+      // Clear the form
+      setPassword('');
+      setConfirmPassword('');
       
       // Redirect to login after 3 seconds
       setTimeout(() => {
@@ -57,11 +132,55 @@ export default function ResetPassword() {
       
     } catch (error: any) {
       console.error('Error resetting password:', error);
-      toast.error(error.message || 'Failed to reset password');
+      toast.error(error.message || 'Failed to reset password. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  // Show loading while validating session
+  if (validatingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#1a1f2e] px-4 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-white text-sm">Validating reset link...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if session is invalid
+  if (sessionValid === false) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#1a1f2e] px-4 sm:px-6 lg:px-8">
+        <Head>
+          <title>Invalid Reset Link | Aditi Daily Updates</title>
+          <meta name="description" content="Invalid password reset link" />
+        </Head>
+        
+        <div className="max-w-md w-full space-y-8 bg-[#1e2538] p-8 rounded-xl shadow-2xl">
+          <div className="text-center">
+            <div className="mx-auto w-16 h-16 bg-red-900 rounded-full flex items-center justify-center mb-4">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-red-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-white mb-4">Invalid Reset Link</h2>
+            <p className="text-gray-300 mb-6">
+              This password reset link is invalid or has expired. Please request a new one.
+            </p>
+            <button
+              onClick={() => router.push('/')}
+              className="inline-block py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 transition-colors duration-200"
+            >
+              Return to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#1a1f2e] px-4 sm:px-6 lg:px-8">

@@ -175,26 +175,49 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
     try {
       setIsLoading(true);
       
-      // Add SSR guard for window access
-      const redirectUrl = typeof window !== 'undefined' 
-        ? `${window.location.origin}/reset-password`
-        : '/reset-password';
+      // Enhanced redirect URL generation for Vercel deployment
+      const getRedirectUrl = () => {
+        if (typeof window !== 'undefined') {
+          // Use the current domain to ensure it works on Vercel
+          const protocol = window.location.protocol;
+          const host = window.location.host;
+          return `${protocol}//${host}/reset-password`;
+        }
+        // Fallback for SSR or when window is not available
+        return `${process.env.NEXT_PUBLIC_SITE_URL || 'https://aditi-daily-updates.vercel.app'}/reset-password`;
+      };
+      
+      const redirectUrl = getRedirectUrl();
+      console.log('Password reset redirect URL:', redirectUrl);
       
       const { data, error } = await supabase.auth.resetPasswordForEmail(forgotPasswordEmail, {
         redirectTo: redirectUrl,
       });
 
       if (error) {
-        toast.error(`Password reset failed: ${error.message}`);
+        console.error('Password reset error:', error);
+        if (error.message.includes('rate limit')) {
+          toast.error('Too many password reset attempts. Please wait a few minutes before trying again.');
+        } else if (error.message.includes('invalid email')) {
+          toast.error('Please enter a valid email address.');
+        } else if (error.message.includes('not found')) {
+          // Don't reveal if email exists or not for security
+          toast.success('If an account with this email exists, you will receive a password reset link.');
+        } else {
+          toast.error(`Password reset failed: ${error.message}`);
+        }
         return;
       }
 
-      toast.success('Password reset email sent! Check your inbox.');
+      // Always show success message for security (don't reveal if email exists)
+      toast.success('Password reset email sent! Check your inbox and spam folder.');
       setResetEmailSent(true);
       setForgotPasswordEmail('');
-    } catch (error) {
+      
+      console.log('Password reset email sent successfully to:', forgotPasswordEmail);
+    } catch (error: any) {
       console.error('Password reset error:', error);
-      toast.error('Failed to send password reset email');
+      toast.error('Failed to send password reset email. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -632,6 +655,9 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
         {showForgotPassword && (
           <div className="mt-4 p-4 bg-gray-900/30 border border-gray-600 rounded-md">
             <h3 className="text-sm font-medium text-white mb-3">Reset Password</h3>
+            <p className="text-xs text-gray-300 mb-3">
+              Enter your email address and we'll send you a link to reset your password.
+            </p>
             <form onSubmit={handleResetPassword} className="space-y-3">
               <input
                 type="email"
@@ -651,7 +677,11 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowForgotPassword(false)}
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setResetEmailSent(false);
+                    setForgotPasswordEmail('');
+                  }}
                   className="px-4 py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors duration-200"
                 >
                   Cancel
@@ -660,8 +690,26 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             </form>
             
             {resetEmailSent && (
-              <div className="mt-3 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
-                Password reset email sent! Check your inbox and follow the instructions.
+              <div className="mt-3 p-3 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
+                <div className="font-medium mb-1">Password reset email sent!</div>
+                <div className="text-gray-300 space-y-1">
+                  <p>• Check your inbox and spam folder</p>
+                  <p>• Click the reset link in the email</p>
+                  <p>• If you don't receive it within 5 minutes, try again</p>
+                  <p>• The link will expire in 1 hour for security</p>
+                </div>
+              </div>
+            )}
+            
+            {!resetEmailSent && (
+              <div className="mt-3 p-2 bg-blue-900/30 border border-blue-700 rounded text-xs text-blue-300">
+                <p className="font-medium mb-1">What happens next?</p>
+                <div className="text-gray-300 space-y-1">
+                  <p>1. We'll send a secure reset link to your email</p>
+                  <p>2. Check your spam folder if you don't see it</p>
+                  <p>3. Click the link to create a new password</p>
+                  <p>4. Return here to log in with your new password</p>
+                </div>
               </div>
             )}
           </div>
@@ -924,6 +972,9 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
         {showForgotPassword && (
           <div className="mt-4 p-4 bg-gray-900/30 border border-gray-600 rounded-md">
             <h3 className="text-sm font-medium text-white mb-3">Reset Password</h3>
+            <p className="text-xs text-gray-300 mb-3">
+              Enter your email address and we'll send you a link to reset your password.
+            </p>
             <form onSubmit={handleResetPassword} className="space-y-3">
               <input
                 type="email"
@@ -943,7 +994,11 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowForgotPassword(false)}
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setResetEmailSent(false);
+                    setForgotPasswordEmail('');
+                  }}
                   className="px-4 py-2 text-gray-400 hover:text-gray-300 text-sm transition-colors duration-200"
                 >
                   Cancel
@@ -952,8 +1007,26 @@ export default function AuthPassword({ embedded = false }: AuthPasswordProps) {
             </form>
             
             {resetEmailSent && (
-              <div className="mt-3 p-2 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
-                Password reset email sent! Check your inbox and follow the instructions.
+              <div className="mt-3 p-3 bg-green-900/30 border border-green-700 rounded text-xs text-green-300">
+                <div className="font-medium mb-1">Password reset email sent!</div>
+                <div className="text-gray-300 space-y-1">
+                  <p>• Check your inbox and spam folder</p>
+                  <p>• Click the reset link in the email</p>
+                  <p>• If you don't receive it within 5 minutes, try again</p>
+                  <p>• The link will expire in 1 hour for security</p>
+                </div>
+              </div>
+            )}
+            
+            {!resetEmailSent && (
+              <div className="mt-3 p-2 bg-blue-900/30 border border-blue-700 rounded text-xs text-blue-300">
+                <p className="font-medium mb-1">What happens next?</p>
+                <div className="text-gray-300 space-y-1">
+                  <p>1. We'll send a secure reset link to your email</p>
+                  <p>2. Check your spam folder if you don't see it</p>
+                  <p>3. Click the link to create a new password</p>
+                  <p>4. Return here to log in with your new password</p>
+                </div>
               </div>
             )}
           </div>
