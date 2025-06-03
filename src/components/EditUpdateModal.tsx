@@ -491,7 +491,7 @@ export default function EditUpdateModal({ isOpen, onClose, update, onSuccess }: 
               className={`shadow-sm block w-full sm:text-sm rounded-md border bg-[#262d40] text-white ${
                 formErrors.tasks_completed ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-600 focus:ring-purple-500 focus:border-purple-500'
               } p-2`}
-              placeholder="List the tasks completed"
+              placeholder="Please Enter List of Tasks"
               disabled={!isFieldEditable('tasks_completed')}
             />
             {formErrors.tasks_completed && (

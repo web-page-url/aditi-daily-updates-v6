@@ -453,7 +453,7 @@ export default function DailyUpdateForm({
             {/* Tasks Completed Section */}
             <div className="group">
               <label htmlFor="tasks_completed" className="block text-sm font-medium text-gray-300 mb-2 group-hover:text-purple-400 transition-colors duration-300">
-                Tasks Completed <span className="text-red-500">*</span>
+                Tasks <span className="text-red-500">*</span>
               </label>
               <textarea
                 id="tasks_completed"
@@ -468,7 +468,7 @@ export default function DailyUpdateForm({
                 resize-none`}
                 rows={4}
                 required
-                placeholder="Describe the tasks you completed today"
+                placeholder="Please Enter List of Tasks"
               />
               {formErrors.tasks_completed && (
                 <p className="mt-1 text-sm text-red-500">{formErrors.tasks_completed}</p>

@@ -467,7 +467,7 @@ export default function DailyUpdateFormPage() {
                 {/* Tasks Completed */}
                 <div className="mt-6">
                   <label htmlFor="tasks_completed" className="block text-sm font-medium text-gray-200 mb-1">
-                    Tasks Completed Today*
+                    Tasks*
                   </label>
                   <textarea
                     id="tasks_completed"
@@ -478,7 +478,7 @@ export default function DailyUpdateFormPage() {
                     className={`shadow-sm block w-full sm:text-sm rounded-md border bg-[#262d40] text-white ${
                       formErrors.tasks_completed ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-600 focus:ring-purple-500 focus:border-purple-500'
                     } p-2`}
-                    placeholder="List the tasks you completed today"
+                    placeholder="Please Enter List of Tasks"
                   />
                   {formErrors.tasks_completed && (
                     <p className="mt-1 text-sm text-red-400">{formErrors.tasks_completed}</p>
